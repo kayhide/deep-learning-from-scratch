@@ -24,10 +24,13 @@ main = do
 
 displayActivationFunction :: IO ()
 displayActivationFunction = plotPathsStyle attrs paths
-  where attrs = [(Title "activation functions"), (YRange (-0.1, 1.1))]
+  where attrs = [(Title "activation functions"), (YRange (-0.1, 5.0))]
         xs = linearScale 100 (-5.0, 5.0)
         paths = do
-          (fn, name) <- [(stepFunction, "step function")]
+          (fn, name) <- [ (stepFunction, "step function")
+                        , (sigmoidFunction, "sigmoid function")
+                        , (reluFunction, "ReLU function")
+                        ]
           let style = PlotStyle Lines $ CustomStyle [(LineTitle name)]
           return $ (style, zip xs (fn <$> xs))
 
