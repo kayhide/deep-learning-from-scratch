@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad
+import Graphics.Gnuplot.Simple
 import Perceptron
 
 runAndPrint op x1 x2 = do
@@ -19,3 +20,21 @@ main = do
   putStrLn "XOR"
   sequence $ runAndPrint xorGate <$> [0, 1] <*> [0, 1]
   return ()
+
+-- | Test for drawing chart
+displaySin :: IO ()
+displaySin = plotPath [(Title "hello")] points
+  where points :: [(Double, Double)]
+        points = zip xs ys
+        xs = linearScale 100 (0.0, 6.0)
+        ys = sin <$> xs
+
+-- | Test for drawing chart with multi paths
+displaySinCos :: IO ()
+displaySinCos = plotPathsStyle attrs [(style1, zip xs ys1), (style2, zip xs ys2)]
+  where attrs = [(Title "sin and cos"), (XLabel "x"), (YLabel "y)]")]
+        xs = linearScale 100 (0.0, 6.0) :: [Double]
+        ys1 = sin <$> xs
+        ys2 = cos <$> xs
+        style1 = PlotStyle Lines $ CustomStyle [(LineTitle "sin")]
+        style2 = PlotStyle Lines $ CustomStyle [(LineTitle "cos")]
