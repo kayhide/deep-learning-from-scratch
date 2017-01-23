@@ -3,6 +3,7 @@ module Main where
 import Control.Monad
 import Graphics.Gnuplot.Simple
 import Perceptron
+import NeuralNetwork
 
 runAndPrint op x1 x2 = do
   putStr $ show (x1, x2)
@@ -20,6 +21,16 @@ main = do
   putStrLn "XOR"
   sequence $ runAndPrint xorGate <$> [0, 1] <*> [0, 1]
   return ()
+
+displayActivationFunction :: IO ()
+displayActivationFunction = plotPathsStyle attrs paths
+  where attrs = [(Title "activation functions"), (YRange (-0.1, 1.1))]
+        xs = linearScale 100 (-5.0, 5.0)
+        paths = do
+          (fn, name) <- [(stepFunction, "step function")]
+          let style = PlotStyle Lines $ CustomStyle [(LineTitle name)]
+          return $ (style, zip xs (fn <$> xs))
+
 
 -- | Test for drawing chart
 displaySin :: IO ()
