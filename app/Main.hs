@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Main where
 
 import Control.Monad
@@ -57,24 +58,28 @@ displaySinCos = plotPathsStyle attrs [(style1, zip xs ys1), (style2, zip xs ys2)
 
 
 -- | ch3 - 4
-type Network = [(Matrix R, Vector R)]
+type ActivationFunction = Double -> Double
+type Layer = (Matrix R, Vector R, ActivationFunction)
+type Network = [Layer]
 network :: Network
-network = [ ( (3><2) [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+network = [ ( (2><3) [0.1, 0.3, 0.5, 0.2, 0.4, 0.6]
             , vector [0.1, 0.2, 0.3]
+            , sigmoidFunction
             )
-          , ( (2><2) [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+          , ( (3><2) [0.1, 0.4, 0.2, 0.5, 0.3, 0.6]
             , vector [0.1, 0.2]
+            , sigmoidFunction
             )
-          , ( (2><2) [0.1, 0.2, 0.3, 0.4]
+          , ( (2><2) [0.1, 0.3, 0.2, 0.4]
             , vector [0.1, 0.2]
+            , id
             )
           ]
 
 forward :: Network -> Vector R -> Vector R
-forward nw x = foldl (activate . weigh) x nw
-  where weigh x (w, b) = w #> x + b
-        activate = cmap sigmoidFunction
+forward nw x = foldl propagate x nw
+  where propagate x (w, b, f) = cmap f $ x <# w + b
 
 
 x = vector [1.0, 0.5]
-y = cmap id a3
+y = forward network x
