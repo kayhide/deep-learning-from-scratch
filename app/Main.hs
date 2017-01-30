@@ -1,7 +1,9 @@
+{-# LANGUAGE DataKinds #-}
 module Main where
 
 import Control.Monad
 import Graphics.Gnuplot.Simple
+import Numeric.LinearAlgebra
 import Perceptron
 import NeuralNetwork
 
@@ -52,3 +54,27 @@ displaySinCos = plotPathsStyle attrs [(style1, zip xs ys1), (style2, zip xs ys2)
         ys2 = cos <$> xs
         style1 = PlotStyle Lines $ CustomStyle [(LineTitle "sin")]
         style2 = PlotStyle Lines $ CustomStyle [(LineTitle "cos")]
+
+
+-- | ch3 - 4
+type Network = [(Matrix R, Vector R)]
+network :: Network
+network = [ ( (3><2) [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+            , vector [0.1, 0.2, 0.3]
+            )
+          , ( (2><2) [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+            , vector [0.1, 0.2]
+            )
+          , ( (2><2) [0.1, 0.2, 0.3, 0.4]
+            , vector [0.1, 0.2]
+            )
+          ]
+
+forward :: Network -> Vector R -> Vector R
+forward nw x = foldl (activate . weigh) x nw
+  where weigh x (w, b) = w #> x + b
+        activate = cmap sigmoidFunction
+
+
+x = vector [1.0, 0.5]
+y = cmap id a3
