@@ -30,6 +30,8 @@ executable zero-to-deep-learning
                      , zero-to-deep-learning
                      , gnuplot
                      , hmatrix
+                     , yaml
+                     , bytestring
   default-language:    Haskell2010
 
 test-suite zero-to-deep-learning-test
