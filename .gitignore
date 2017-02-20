@@ -1,3 +1,5 @@
+data/*.gz
+
 ### https://raw.github.com/github/gitignore/94043d7fc7adf554c69355daeb75e2c97ccd7671/haskell.gitignore
 
 dist

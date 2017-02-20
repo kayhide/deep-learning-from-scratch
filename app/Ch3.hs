@@ -1,10 +1,15 @@
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Ch3 where
 
 import Numeric.LinearAlgebra
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Yaml as Yaml
+import Data.Word (Word8)
+import Data.Proxy
 
+import qualified MNIST as MNIST
 import NeuralNetwork
 
 type ActivationFunction = [Double] -> [Double]
@@ -62,3 +67,21 @@ readNetwork = do
          ]
   where readMatrix' f = readMatrix $ "data/mnist/" ++ f ++ ".yml"
         readVector' f = readVector $ "data/mnist/" ++ f ++ ".yml"
+
+predict :: Network -> [Word8] -> Vector R
+predict network ws = forward network $ vector $ map fromIntegral ws
+
+main :: IO ()
+main = do
+  nw <- readNetwork
+  let predictor = predict nw
+  (MNIST.Images _ _ _ mimgs) <- MNIST.getImages (Proxy @MNIST.Test) (Proxy @MNIST.MatrixImage)
+  (MNIST.Images _ _ _ fimgs) <- MNIST.getImages (Proxy @MNIST.Test) (Proxy @MNIST.FlattenImage)
+  predict' (mimgs !! 0) (fimgs !! 0) predictor
+  predict' (mimgs !! 1) (fimgs !! 1) predictor
+  predict' (mimgs !! 2) (fimgs !! 2) predictor
+  return ()
+  where predict' mimg fimg predictor = do
+          MNIST.displayImage mimg
+          print $ predictor fimg
+    
