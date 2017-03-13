@@ -23,3 +23,19 @@ softmax xs = map (/denom) ys
         calc x = exp (x - c)
         c = maximum xs
         denom = sum ys
+
+-- |
+-- >>> meanSquaredError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.6, 0, 0.05, 0.1, 0, 0.1, 0, 0]
+-- 9.750000000000003e-2
+-- >>> meanSquaredError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.1, 0, 0.05, 0.1, 0, 0.6, 0.5, 0]
+-- 0.7224999999999999
+meanSquaredError :: [Double] -> [Double] -> Double
+meanSquaredError t y = (/2) $ sum $ fmap (^2) $ zipWith (-) t y
+
+-- |
+-- >>> crossEntropyError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.6, 0, 0.05, 0.1, 0, 0.1, 0, 0]
+-- 0.5108256237659907
+-- >>> crossEntropyError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.1, 0, 0.05, 0.1, 0, 0.6, 0.5, 0]
+-- 2.3025850929940455
+crossEntropyError :: [Double] -> [Double] -> Double
+crossEntropyError t y = negate $ sum $ filter (not . isNaN) $ zipWith (*) t $ fmap log y
