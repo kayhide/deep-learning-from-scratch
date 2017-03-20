@@ -83,11 +83,11 @@ class HasLabelFileLocate a where
   labelFileRequest :: Request
 
 instance HasLabelFileLocate Test where
-  labelFilePath = "data/t10k-labels-idx1-ubyte.gz"
+  labelFilePath = "tmp/mnist/t10k-labels-idx1-ubyte.gz"
   labelFileRequest = "http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"
 
 instance HasLabelFileLocate Training where
-  labelFilePath = "data/train-labels-idx1-ubyte.gz"
+  labelFilePath = "tmp/mnist/train-labels-idx1-ubyte.gz"
   labelFileRequest = "http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"
 
 class HasImageFileLocate a where
@@ -95,11 +95,11 @@ class HasImageFileLocate a where
   imageFileRequest :: Request
 
 instance HasImageFileLocate Test where
-  imageFilePath = "data/t10k-images-idx3-ubyte.gz"
+  imageFilePath = "tmp/mnist/t10k-images-idx3-ubyte.gz"
   imageFileRequest = "http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz"
 
 instance HasImageFileLocate Training where
-  imageFilePath = "data/train-images-idx3-ubyte.gz"
+  imageFilePath = "tmp/mnist/train-images-idx3-ubyte.gz"
   imageFileRequest = "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"
 
 readOrDownloadFile :: FilePath -> Request -> IO BS.ByteString
