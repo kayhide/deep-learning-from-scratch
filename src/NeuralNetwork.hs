@@ -34,8 +34,9 @@ meanSquaredError t y = (/2) $ sum $ fmap (^2) $ zipWith (-) t y
 
 -- |
 -- >>> crossEntropyError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.6, 0, 0.05, 0.1, 0, 0.1, 0, 0]
--- 0.5108256237659907
+-- 0.510825457099338
 -- >>> crossEntropyError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.1, 0, 0.05, 0.1, 0, 0.6, 0.5, 0]
--- 2.3025850929940455
+-- 2.302584092994546
 crossEntropyError :: [Double] -> [Double] -> Double
-crossEntropyError t y = negate $ sum $ filter (not . isNaN) $ zipWith (*) t $ fmap log y
+crossEntropyError t y = negate $ sum $ zipWith (*) t $ fmap (log . (+delta)) y
+  where delta = 1e-7 :: Double
