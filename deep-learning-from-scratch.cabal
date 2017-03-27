@@ -23,7 +23,10 @@ library
                      , zlib
                      , http-conduit
                      , attoparsec
+                     , extra
                      , bytestring
+                     , binary
+                     , filepath
                      , directory
   default-language:    Haskell2010
 

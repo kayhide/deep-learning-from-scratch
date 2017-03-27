@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module MNIST where
@@ -15,7 +16,11 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
 import Network.HTTP.Simple (Request, httpLBS, getResponseBody)
-import System.Directory (doesFileExist)
+import Data.Binary (Binary)
+import qualified Data.Binary as Binary
+import qualified Data.List.Extra as List
+import System.FilePath
+import System.Directory (doesFileExist, createDirectoryIfMissing)
 
 class HasImageParser image where
   type Image image
@@ -36,20 +41,23 @@ instance HasImageParser FlattenImage where
   imageParser w h = P.count (w * h) (fromIntegral <$> P.anyWord8)
   normalize xs = map (/ 255.0) xs
 
-class HasLabelParser label where
+class (Binary (Label label)) => HasLabelParser label where
   type Label label
+  labelTypeName :: String
   labelParser :: Parser (Label label)
 
 data NumberLabel
 
 instance HasLabelParser NumberLabel where
   type Label NumberLabel = Word8
+  labelTypeName = "NumberLabel"
   labelParser = P.anyWord8
 
 data OneHotLabel
 
 instance HasLabelParser OneHotLabel where
   type Label OneHotLabel = [Word8]
+  labelTypeName = "OneHotLabel"
   labelParser = fmap (\w -> map (\v -> if w == v then 1 else 0) [0..9]) P.anyWord8
 
 data Labels label = Labels Int [label] deriving Show
@@ -79,7 +87,7 @@ data Training
 data Test
 
 class HasLabelFileLocate a where
-  labelFilePath :: String
+  labelFilePath :: FilePath
   labelFileRequest :: Request
 
 instance HasLabelFileLocate Test where
@@ -91,7 +99,7 @@ instance HasLabelFileLocate Training where
   labelFileRequest = "http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"
 
 class HasImageFileLocate a where
-  imageFilePath :: String
+  imageFilePath :: FilePath
   imageFileRequest :: Request
 
 instance HasImageFileLocate Test where
@@ -118,6 +126,27 @@ getLabels  = do
   case P.parseOnly (labelsParser @label) content of
     Left msg -> error msg
     Right labels -> pure labels
+
+labelChunkSize :: Int
+labelChunkSize = 100
+
+labelChunksDir :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => FilePath
+labelChunksDir = dropExtension (labelFilePath @phase) </> (labelTypeName @label)
+
+chunkifyLabels :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => IO [FilePath]
+chunkifyLabels = do
+  Labels _ labels <- getLabels @phase @label
+  let chunks = List.chunksOf labelChunkSize labels
+      dir = labelChunksDir @phase @label
+      paths = fmap ((dir </>) . show . (*labelChunkSize) . snd) $ zip chunks [0..]
+  createDirectoryIfMissing True dir
+  mapM_ (uncurry Binary.encodeFile) $ zip paths chunks
+  return paths
+
+-- getLabelsAt :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label)
+--             => [Int]
+--             -> IO (Labels (Label label))
+-- getLabelsAt = undefined
 
 getImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => Bool -> IO (Images (Image image))
 getImages doNormalize = do
