@@ -26,6 +26,8 @@ library
                      , extra
                      , bytestring
                      , binary
+                     , containers
+                     , bifunctors
                      , filepath
                      , directory
   default-language:    Haskell2010

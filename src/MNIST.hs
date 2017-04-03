@@ -23,6 +23,10 @@ import System.FilePath
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import Data.Proxy
 import Data.Typeable
+import Data.List (sort)
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
+import Data.Bifunctor (bimap)
 
 class HasImageParser image where
   type Image image
@@ -126,6 +130,11 @@ getLabels  = do
     Left msg -> error msg
     Right labels -> pure labels
 
+chunkedIndices :: Int -> [Int] -> IntMap [Int]
+chunkedIndices size indices = IntMap.fromListWith (++) $ fmap roundedAndListed $ indices
+  where roundedAndListed i = (offset i, [i - offset i])
+        offset i = i `div` size * size
+
 labelChunkSize :: Int
 labelChunkSize = 100
 
@@ -133,20 +142,31 @@ labelChunksDir :: forall phase label. (HasLabelFileLocate phase, HasLabelParser 
 labelChunksDir = dropExtension (labelFilePath @phase) </> labelTypeName
   where labelTypeName = show $ typeRep (Proxy @label)
 
+labelChunkFile :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => Int -> FilePath
+labelChunkFile index = (labelChunksDir @phase @label) </> show index
+
 chunkifyLabels :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => IO [FilePath]
 chunkifyLabels = do
   Labels _ labels <- getLabels @phase @label
   let chunks = List.chunksOf labelChunkSize labels
+      files = fmap (labelChunkFile @phase @label) $ take (length chunks) [0, labelChunkSize..]
       dir = labelChunksDir @phase @label
-      paths = fmap ((dir </>) . show . (*labelChunkSize) . snd) $ zip chunks [0..]
   createDirectoryIfMissing True dir
-  mapM_ (uncurry Binary.encodeFile) $ zip paths chunks
-  return paths
+  mapM_ (uncurry Binary.encodeFile) $ zip files chunks
+  return files
 
--- getLabelsAt :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label)
---             => [Int]
---             -> IO (Labels (Label label))
--- getLabelsAt = undefined
+getLabelsAt :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label)
+            => [Int]
+            -> IO [Label label]
+getLabelsAt indices = concat <$> mapM readContents fileAndIndices
+  where
+     fileAndIndices = fmap fn $ IntMap.toList $ chunkedIndices labelChunkSize indices
+     fn = bimap (labelChunkFile @phase @label) id
+     readContents (file, indices) = do
+       exists <- doesFileExist file
+       when (not exists) $ (chunkifyLabels @phase @label) >> return ()
+       labels <- Binary.decodeFile file
+       return $ fmap (labels !!) $ sort indices
 
 getImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => Bool -> IO (Images (Image image))
 getImages doNormalize = do
