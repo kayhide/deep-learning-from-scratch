@@ -21,6 +21,8 @@ import qualified Data.Binary as Binary
 import qualified Data.List.Extra as List
 import System.FilePath
 import System.Directory (doesFileExist, createDirectoryIfMissing)
+import Data.Proxy
+import Data.Typeable
 
 class HasImageParser image where
   type Image image
@@ -41,23 +43,20 @@ instance HasImageParser FlattenImage where
   imageParser w h = P.count (w * h) (fromIntegral <$> P.anyWord8)
   normalize xs = map (/ 255.0) xs
 
-class (Binary (Label label)) => HasLabelParser label where
+class (Binary (Label label), Typeable label) => HasLabelParser label where
   type Label label
-  labelTypeName :: String
   labelParser :: Parser (Label label)
 
 data NumberLabel
 
 instance HasLabelParser NumberLabel where
   type Label NumberLabel = Word8
-  labelTypeName = "NumberLabel"
   labelParser = P.anyWord8
 
 data OneHotLabel
 
 instance HasLabelParser OneHotLabel where
   type Label OneHotLabel = [Word8]
-  labelTypeName = "OneHotLabel"
   labelParser = fmap (\w -> map (\v -> if w == v then 1 else 0) [0..9]) P.anyWord8
 
 data Labels label = Labels Int [label] deriving Show
@@ -131,7 +130,8 @@ labelChunkSize :: Int
 labelChunkSize = 100
 
 labelChunksDir :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => FilePath
-labelChunksDir = dropExtension (labelFilePath @phase) </> (labelTypeName @label)
+labelChunksDir = dropExtension (labelFilePath @phase) </> labelTypeName
+  where labelTypeName = show $ typeRep (Proxy @label)
 
 chunkifyLabels :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => IO [FilePath]
 chunkifyLabels = do
