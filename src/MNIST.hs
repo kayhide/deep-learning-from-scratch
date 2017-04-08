@@ -6,7 +6,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module MNIST where
+module MNIST (
+  Images(..),
+  MatrixImage,
+  Labels(..),
+  NumberLabel,
+  OneHotLabel,
+  Training,
+  Test,
+  getLabels,
+  getLabelsAt,
+  getImages,
+  getImagesAt,
+  displayImage
+  ) where
 
 import Codec.Compression.GZip (decompress)
 import Control.Monad (when)
@@ -28,7 +41,7 @@ import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Bifunctor (bimap)
 
-class HasImageParser image where
+class (Binary (Image image), Typeable image) => HasImageParser image where
   type Image image
   imageParser :: Int -> Int -> Parser (Image image)
   normalize :: Image image -> Image image
@@ -168,12 +181,45 @@ getLabelsAt indices = concat <$> mapM readContents fileAndIndices
        labels <- Binary.decodeFile file
        return $ fmap (labels !!) $ sort indices
 
+imageChunkSize :: Int
+imageChunkSize = 100
+
+imageChunksDir :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => FilePath
+imageChunksDir = dropExtension (imageFilePath @phase) </> imageTypeName
+  where imageTypeName = show $ typeRep (Proxy @image)
+
+imageChunkFile :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => Int -> FilePath
+imageChunkFile index = (imageChunksDir @phase @image) </> show index
+
+chunkifyImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => IO [FilePath]
+chunkifyImages = do
+  Images _ _ _ images <- getImages @phase @image False
+  let chunks = List.chunksOf imageChunkSize images
+      files = fmap (imageChunkFile @phase @image) $ take (length chunks) [0, imageChunkSize..]
+      dir = imageChunksDir @phase @image
+  createDirectoryIfMissing True dir
+  mapM_ (uncurry Binary.encodeFile) $ zip files chunks
+  return files
+
 getImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => Bool -> IO (Images (Image image))
 getImages doNormalize = do
   content <- readOrDownloadFile (imageFilePath @phase) (imageFileRequest @phase)
   case P.parseOnly (imagesParser @image) content of
     Left msg -> error msg
     Right (Images len width height images) -> pure (Images len width height (if doNormalize then map (normalize @image) images else images))
+
+getImagesAt :: forall phase image. (HasImageFileLocate phase, HasImageParser image)
+            => [Int]
+            -> IO [Image image]
+getImagesAt indices = concat <$> mapM readContents fileAndIndices
+  where
+     fileAndIndices = fmap fn $ IntMap.toList $ chunkedIndices imageChunkSize indices
+     fn = bimap (imageChunkFile @phase @image) id
+     readContents (file, indices) = do
+       exists <- doesFileExist file
+       when (not exists) $ (chunkifyImages @phase @image) >> return ()
+       images <- Binary.decodeFile file
+       return $ fmap (images !!) $ sort indices
 
 displayImage :: [[Double]] -> IO ()
 displayImage image = mapM_ putStrLn (map (map toGrayscale) image)
