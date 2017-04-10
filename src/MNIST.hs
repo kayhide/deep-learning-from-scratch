@@ -19,11 +19,13 @@ module MNIST (
   getLabelsAt,
   getImages,
   getImagesAt,
-  displayImage
+  displayImage,
+  getSamples,
+  displaySample
   ) where
 
 import Codec.Compression.GZip (decompress)
-import Control.Monad (when)
+import Control.Monad (when, guard)
 import Data.Attoparsec.ByteString (Parser)
 import qualified Data.Attoparsec.ByteString as P
 import qualified Data.ByteString as BS
@@ -32,12 +34,16 @@ import Data.Word (Word8)
 import Network.HTTP.Simple (Request, httpLBS, getResponseBody)
 import qualified Data.List.Extra as List
 import Data.List (sort)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
+import qualified Data.Yaml as Yaml
 import System.FilePath
 import System.Directory (doesFileExist, createDirectoryIfMissing)
+import System.Random
 
 class (Binary (Image image)) => HasImageParser image where
   type Image image
@@ -124,6 +130,9 @@ instance HasImageFileLocate Training where
   imageFilePath = "tmp/mnist/train-images-idx3-ubyte.gz"
   imageFileRequest = "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"
 
+type LabelsMeta = Map String Int
+type ImagesMeta = Map String Int
+
 class HasChunks a b where
   chunksDir :: FilePath
 
@@ -132,6 +141,9 @@ class HasChunks a b where
 
   chunkSize :: Int
   chunkSize = 100
+
+  metaFile :: FilePath
+  metaFile = (chunksDir @a @b) </> "meta.yaml"
 
 instance HasChunks Test NumberLabel where
   chunksDir = dropExtension (labelFilePath @Test) </> "NumberLabel"
@@ -167,6 +179,20 @@ readOrDownloadFile path req = do
     downloadFile = do
       BS.writeFile path =<< (BL.toStrict . getResponseBody <$> httpLBS req)
 
+writeMeta :: forall phase item a. (HasChunks phase item, Yaml.ToJSON a) => a -> IO FilePath
+writeMeta x = do
+  let dir = (chunksDir @phase @item)
+      file = (metaFile @phase @item)
+  createDirectoryIfMissing True dir
+  Yaml.encodeFile file x
+  return file
+
+readMeta :: forall phase item a. (HasChunks phase item, Yaml.FromJSON a) => IO (Maybe a)
+readMeta = do
+  let file = (metaFile @phase @item)
+  guard =<< doesFileExist file
+  Yaml.decodeFile file
+
 chunkifyItems :: forall phase item a. (HasChunks phase item, Binary a) => [a] -> IO [FilePath]
 chunkifyItems items = do
   let size = (chunkSize @phase @item)
@@ -192,7 +218,8 @@ getLabels  = do
 chunkifyLabels :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label, HasChunks phase label)
                => IO [FilePath]
 chunkifyLabels = do
-  Labels _ labels <- getLabels @phase @label
+  Labels len labels <- getLabels @phase @label
+  writeMeta @phase @label (Map.fromList [("count", len)] :: (Map String Int))
   chunkifyItems @phase @label labels
 
 getLabelsAt :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label, HasChunks phase label)
@@ -208,11 +235,14 @@ getLabelsAt indices = concat <$> mapM readContents offsetAndIndices
        labels <- Binary.decodeFile file
        return $ fmap (labels !!) $ sort indices
 
+getLabelsMeta :: forall phase label. (HasChunks phase label) => IO (Maybe LabelsMeta)
+getLabelsMeta = readMeta @phase @label
 
 chunkifyImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image, HasChunks phase image)
                => IO [FilePath]
 chunkifyImages = do
-  Images _ _ _ images <- getImages @phase @image False
+  Images len width height images <- getImages @phase @image False
+  writeMeta @phase @image (Map.fromList [("count", len), ("width", width), ("height", height)] :: (Map String Int))
   chunkifyItems @phase @image images
 
 getImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => Bool -> IO (Images (Image image))
@@ -235,6 +265,9 @@ getImagesAt indices = concat <$> mapM readContents offsetAndIndices
        images <- Binary.decodeFile file
        return $ fmap (images !!) $ sort indices
 
+getImagesMeta :: forall phase image. (HasChunks phase image) => IO (Maybe ImagesMeta)
+getImagesMeta = readMeta @phase @image
+
 displayImage :: [[Double]] -> IO ()
 displayImage image = mapM_ putStrLn (map (map toGrayscale) image)
   where
@@ -242,7 +275,27 @@ displayImage image = mapM_ putStrLn (map (map toGrayscale) image)
     index x = (10 * ceiling x) `quot` 256
     toGrayscale x = grayscale !! (index x)
 
+type Sample = (Label NumberLabel, Image MatrixImage)
+
+getSamples :: forall phase. ( HasChunks phase NumberLabel
+                            , HasLabelFileLocate phase
+                            , HasChunks phase MatrixImage
+                            , HasImageFileLocate phase
+                            ) => Int -> IO [Sample]
+getSamples n = do
+  Just meta <- getLabelsMeta @phase @NumberLabel
+  let Just count = Map.lookup "count" meta
+  gen <- newStdGen
+  let indices = List.sort $ take n $ List.nub $ randomRs (0, count - 1) gen
+  zip <$> (getLabelsAt @phase @NumberLabel indices) <*> (getImagesAt @phase @MatrixImage indices)
+
+displaySample :: Sample -> IO ()
+displaySample (num, image) = do
+  displayImage image
+  print num
+
+
 main :: IO ()
 main = do
-  (Images _ _ _ images) <- getImages @Test @MatrixImage False
-  displayImage (images !! 1)
+  samples <- getSamples @Test 5
+  mapM_ displaySample samples

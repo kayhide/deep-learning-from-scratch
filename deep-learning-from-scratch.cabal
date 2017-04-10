@@ -29,6 +29,8 @@ library
                      , containers
                      , filepath
                      , directory
+                     , random
+                     , yaml
   default-language:    Haskell2010
 
 executable deep-learning-from-scratch
