@@ -77,14 +77,12 @@ displayPrediction xs = do
           printf "%d %5.2f%% " (i :: Int) (x * 100)
           putStrLn $ replicate (floor (x * 20)) '*'
 
-type ImageData = [[Double]]
-
-readImages :: IO [ImageData]
+readImages :: IO [MNIST.Image]
 readImages = do
-  (MNIST.Images _ _ _ imgs) <- MNIST.getImages @MNIST.Test @MNIST.MatrixImage False
+  (MNIST.Images _ _ _ imgs) <- MNIST.getImages MNIST.Test
   return imgs
 
-run :: [ImageData] -> IO ()
+run :: [MNIST.Image] -> IO ()
 run imgs = do
   predictor <- predict <$> readNetwork
   mapM_ (predict' predictor) imgs

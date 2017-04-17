@@ -8,13 +8,14 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module MNIST (
+  Image,
+  FlattenImage,
   Images(..),
-  MatrixImage,
-  Labels(..),
-  NumberLabel,
+  Label,
   OneHotLabel,
-  Training,
-  Test,
+  Labels(..),
+  Phase(..),
+  Sample,
   getLabels,
   getLabelsAt,
   getImages,
@@ -26,12 +27,16 @@ module MNIST (
 
 import Codec.Compression.GZip (decompress)
 import Control.Monad (when, guard)
+import Data.Bifunctor
 import Data.Attoparsec.ByteString (Parser)
 import qualified Data.Attoparsec.ByteString as P
+import Data.ByteString (ByteString)
+import Data.ByteString.Char8 (unpack)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
 import Network.HTTP.Simple (Request, httpLBS, getResponseBody)
+import Network.HTTP.Conduit (path)
 import qualified Data.List.Extra as List
 import Data.List (sort)
 import Data.Map (Map)
@@ -45,249 +50,188 @@ import System.FilePath
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import System.Random
 
-class (Binary (Image image)) => HasImageParser image where
-  type Image image
-  imageParser :: Int -> Int -> Parser (Image image)
-  normalize :: Image image -> Image image
+type Image = [[Double]]
+type FlattenImage = [Double]
 
-data MatrixImage
+type Label = Word8
+type OneHotLabel = [Word8]
 
-instance HasImageParser MatrixImage where
-  type Image MatrixImage = [[Double]]
-  imageParser w h = P.count h (P.count w (fromIntegral <$> P.anyWord8))
-  normalize xs = map (map (/ 255.0)) xs
+toOneHotLabel :: Label -> OneHotLabel
+toOneHotLabel label = replicate n 0 ++ 1 : replicate (9 - n) 0
+  where n = fromIntegral label
 
-data FlattenImage
-
-instance HasImageParser FlattenImage where
-  type Image FlattenImage = [Double]
-  imageParser w h = P.count (w * h) (fromIntegral <$> P.anyWord8)
-  normalize xs = map (/ 255.0) xs
-
-class (Binary (Label label)) => HasLabelParser label where
-  type Label label
-  labelParser :: Parser (Label label)
-
-data NumberLabel
-
-instance HasLabelParser NumberLabel where
-  type Label NumberLabel = Word8
-  labelParser = P.anyWord8
-
-data OneHotLabel
-
-instance HasLabelParser OneHotLabel where
-  type Label OneHotLabel = [Word8]
-  labelParser = fmap (\w -> map (\v -> if w == v then 1 else 0) [0..9]) P.anyWord8
-
-data Labels label = Labels Int [label] deriving Show
-data Images image = Images Int Int Int [image] deriving Show
+data Labels = Labels Int [Label] deriving Show
+data Images = Images Int Int Int [Image] deriving Show
 
 words2Int :: [Word8] -> Int
 words2Int xs = sum $ zipWith (*) (reverse xs') (map (256^) [0..])
   where xs' = map fromIntegral xs
 
-labelsParser :: forall label. HasLabelParser label => Parser (Labels (Label label))
+labelsParser :: Parser Labels
 labelsParser = do
   P.string $ BS.pack [0,0,8,1]
   len <- words2Int <$> P.count 4 P.anyWord8
-  labels <- P.count len (labelParser @label)
+  labels <- P.count len labelParser
   pure (Labels len labels)
+  where
+    labelParser = P.anyWord8
 
-imagesParser :: forall image. HasImageParser image => Parser (Images (Image image))
+imagesParser :: Parser Images
 imagesParser = do
   P.string $ BS.pack [0,0,8,3]
   len    <- words2Int <$> P.count 4 P.anyWord8
   width  <- words2Int <$> P.count 4 P.anyWord8
   height <- words2Int <$> P.count 4 P.anyWord8
-  images <- P.count len (imageParser @image width height)
+  images <- P.count len (imageParser width height)
   pure (Images len width height images)
+  where
+    imageParser w h = P.count h (P.count w (fromIntegral <$> P.anyWord8))
 
-data Training
-data Test
+data Phase = Test | Training deriving (Show, Eq, Ord)
 
-class HasLabelFileLocate a where
-  labelFilePath :: FilePath
-  labelFileRequest :: Request
+labelsUrl :: Phase -> Request
+labelsUrl Test = "http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"
+labelsUrl Training = "http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"
 
-instance HasLabelFileLocate Test where
-  labelFilePath = "tmp/mnist/t10k-labels-idx1-ubyte.gz"
-  labelFileRequest = "http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"
-
-instance HasLabelFileLocate Training where
-  labelFilePath = "tmp/mnist/train-labels-idx1-ubyte.gz"
-  labelFileRequest = "http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"
-
-class HasImageFileLocate a where
-  imageFilePath :: FilePath
-  imageFileRequest :: Request
-
-instance HasImageFileLocate Test where
-  imageFilePath = "tmp/mnist/t10k-images-idx3-ubyte.gz"
-  imageFileRequest = "http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz"
-
-instance HasImageFileLocate Training where
-  imageFilePath = "tmp/mnist/train-images-idx3-ubyte.gz"
-  imageFileRequest = "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"
+imagesUrl :: Phase -> Request
+imagesUrl Test = "http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz"
+imagesUrl Training = "http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"
 
 type LabelsMeta = Map String Int
 type ImagesMeta = Map String Int
 
-class HasChunks a b where
-  chunksDir :: FilePath
+chunkSize :: Int
+chunkSize = 100
 
-  chunkFile :: Int -> FilePath
-  chunkFile offset = (chunksDir @a @b) </> show offset
+metaFile :: String
+metaFile = "meta.yaml"
 
-  chunkSize :: Int
-  chunkSize = 100
-
-  metaFile :: FilePath
-  metaFile = (chunksDir @a @b) </> "meta.yaml"
-
-instance HasChunks Test NumberLabel where
-  chunksDir = dropExtension (labelFilePath @Test) </> "NumberLabel"
-
-instance HasChunks Test OneHotLabel where
-  chunksDir = dropExtension (labelFilePath @Test) </> "OneHotLabel"
-
-instance HasChunks Training NumberLabel where
-  chunksDir = dropExtension (labelFilePath @Training) </> "NumberLabel"
-
-instance HasChunks Training OneHotLabel where
-  chunksDir = dropExtension (labelFilePath @Training) </> "OneHotLabel"
-
-instance HasChunks Test MatrixImage where
-  chunksDir = dropExtension (imageFilePath @Test) </> "MatrixImage"
-
-instance HasChunks Test FlattenImage where
-  chunksDir = dropExtension (imageFilePath @Test) </> "FlattenImage"
-
-instance HasChunks Training MatrixImage where
-  chunksDir = dropExtension (imageFilePath @Training) </> "MatrixImage"
-
-instance HasChunks Training FlattenImage where
-  chunksDir = dropExtension (imageFilePath @Training) </> "FlattenImage"
-
-readOrDownloadFile :: FilePath -> Request -> IO BS.ByteString
-readOrDownloadFile path req = do
-  doesExist <- doesFileExist path
+readOrDownloadFile :: Request -> IO ByteString
+readOrDownloadFile req = do
+  doesExist <- doesFileExist file
   when (not doesExist) downloadFile
-  BL.toStrict . decompress <$> BL.readFile path
+  BL.toStrict . decompress <$> BL.readFile file
    where
-    downloadFile :: IO ()
-    downloadFile = do
-      BS.writeFile path =<< (BL.toStrict . getResponseBody <$> httpLBS req)
+     file = downloadedFile req
+     downloadFile :: IO ()
+     downloadFile = do
+       createDirectoryIfMissing True (takeDirectory file)
+       BS.writeFile file =<< (BL.toStrict . getResponseBody <$> httpLBS req)
 
-writeMeta :: forall phase item a. (HasChunks phase item, Yaml.ToJSON a) => a -> IO FilePath
-writeMeta x = do
-  let dir = (chunksDir @phase @item)
-      file = (metaFile @phase @item)
+downloadedFile :: Request -> FilePath
+downloadedFile req = "tmp" </> "mnist" </> (takeFileName . unpack . path) req
+
+writeMeta :: (Yaml.ToJSON a) => FilePath -> a -> IO FilePath
+writeMeta dir x = do
+  let file = dir </> metaFile
   createDirectoryIfMissing True dir
   Yaml.encodeFile file x
   return file
 
-readMeta :: forall phase item a. (HasChunks phase item, Yaml.FromJSON a) => IO (Maybe a)
-readMeta = do
-  let file = (metaFile @phase @item)
+readMeta :: (Yaml.FromJSON a) => FilePath -> IO (Maybe a)
+readMeta dir = do
+  let file = dir </> metaFile
   guard =<< doesFileExist file
   Yaml.decodeFile file
 
-chunkifyItems :: forall phase item a. (HasChunks phase item, Binary a) => [a] -> IO [FilePath]
-chunkifyItems items = do
-  let size = (chunkSize @phase @item)
+chunkifyItems :: (Binary a) => FilePath -> [a] -> IO [FilePath]
+chunkifyItems dir items = do
+  let size = chunkSize
       chunks = List.chunksOf size items
-      dir = (chunksDir @phase @item)
       files = fmap ((dir </>) . show) $ take (length chunks) [0, size..]
   createDirectoryIfMissing True dir
   mapM_ (uncurry Binary.encodeFile) $ zip files chunks
   return files
 
 chunkedIndices :: Int -> [Int] -> IntMap [Int]
-chunkedIndices size indices = IntMap.fromListWith (++) $ fmap roundedAndListed $ indices
-  where roundedAndListed i = (offset i, [i - offset i])
-        offset i = i `div` size * size
+chunkedIndices size indices = IntMap.fromListWith (++) $ fmap prepare indices
+  where
+    prepare i = (bimap (*size) (:[])) $ i `divMod` size
 
-getLabels :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label) => IO (Labels (Label label))
-getLabels  = do
-  content <- readOrDownloadFile (labelFilePath @phase) (labelFileRequest @phase)
-  case P.parseOnly (labelsParser @label) content of
+getLabels :: Phase -> IO Labels
+getLabels phase = do
+  content <- readOrDownloadFile req
+  case P.parseOnly labelsParser content of
     Left msg -> error msg
     Right labels -> pure labels
-
-chunkifyLabels :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label, HasChunks phase label)
-               => IO [FilePath]
-chunkifyLabels = do
-  Labels len labels <- getLabels @phase @label
-  writeMeta @phase @label (Map.fromList [("count", len)] :: (Map String Int))
-  chunkifyItems @phase @label labels
-
-getLabelsAt :: forall phase label. (HasLabelFileLocate phase, HasLabelParser label, HasChunks phase label)
-            => [Int]
-            -> IO [Label label]
-getLabelsAt indices = concat <$> mapM readContents offsetAndIndices
   where
-     offsetAndIndices = IntMap.toList $ chunkedIndices (chunkSize @phase @label) indices
-     readContents (offset, indices) = do
-       let file = chunkFile @phase @label offset
-       exists <- doesFileExist file
-       when (not exists) $ (chunkifyLabels @phase @label) >> return ()
-       labels <- Binary.decodeFile file
-       return $ fmap (labels !!) $ sort indices
+    req = labelsUrl phase
 
-getLabelsMeta :: forall phase label. (HasChunks phase label) => IO (Maybe LabelsMeta)
-getLabelsMeta = readMeta @phase @label
+chunkedLabelsDir :: Phase -> FilePath
+chunkedLabelsDir = dropExtension . downloadedFile . labelsUrl
 
-chunkifyImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image, HasChunks phase image)
-               => IO [FilePath]
-chunkifyImages = do
-  Images len width height images <- getImages @phase @image False
-  writeMeta @phase @image (Map.fromList [("count", len), ("width", width), ("height", height)] :: (Map String Int))
-  chunkifyItems @phase @image images
+chunkifyLabels :: Phase -> IO [FilePath]
+chunkifyLabels phase = do
+  Labels len labels <- getLabels phase
+  writeMeta dir (Map.fromList [("count", len)] :: (Map String Int))
+  chunkifyItems dir labels
+  where
+    dir = chunkedLabelsDir phase
 
-getImages :: forall phase image. (HasImageFileLocate phase, HasImageParser image) => Bool -> IO (Images (Image image))
-getImages doNormalize = do
-  content <- readOrDownloadFile (imageFilePath @phase) (imageFileRequest @phase)
-  case P.parseOnly (imagesParser @image) content of
+getLabelsAt :: Phase -> [Int] -> IO [Label]
+getLabelsAt phase indices = concat <$> mapM readContents offsetAndIndices
+  where
+    dir = chunkedLabelsDir phase
+    offsetAndIndices = IntMap.toList $ chunkedIndices chunkSize indices
+    readContents (offset, indices) = do
+      let file = dir </> show offset
+      exists <- doesFileExist file
+      when (not exists) $ (chunkifyLabels phase) >> return ()
+      labels <- Binary.decodeFile file
+      return $ fmap (labels !!) $ sort indices
+
+getLabelsMeta :: Phase -> IO (Maybe LabelsMeta)
+getLabelsMeta = readMeta . chunkedLabelsDir
+
+getImages :: Phase -> IO Images
+getImages phase = do
+  content <- readOrDownloadFile $ imagesUrl phase
+  case P.parseOnly imagesParser content of
     Left msg -> error msg
-    Right (Images len width height images) -> pure (Images len width height (if doNormalize then map (normalize @image) images else images))
+    Right images -> return images
 
-getImagesAt :: forall phase image. (HasImageFileLocate phase, HasImageParser image, HasChunks phase image)
-            => [Int]
-            -> IO [Image image]
-getImagesAt indices = concat <$> mapM readContents offsetAndIndices
+chunkedImagesDir :: Phase -> FilePath
+chunkedImagesDir = dropExtension . downloadedFile . imagesUrl
+
+chunkifyImages :: Phase -> IO [FilePath]
+chunkifyImages phase = do
+  Images len width height images <- getImages phase
+  writeMeta dir (Map.fromList [("count", len), ("width", width), ("height", height)] :: (Map String Int))
+  chunkifyItems dir images
   where
-     offsetAndIndices = IntMap.toList $ chunkedIndices (chunkSize @phase @image) indices
-     readContents (offset, indices) = do
-       let file = chunkFile @phase @image offset
-       exists <- doesFileExist file
-       when (not exists) $ (chunkifyImages @phase @image) >> return ()
-       images <- Binary.decodeFile file
-       return $ fmap (images !!) $ sort indices
+    dir = chunkedImagesDir phase
 
-getImagesMeta :: forall phase image. (HasChunks phase image) => IO (Maybe ImagesMeta)
-getImagesMeta = readMeta @phase @image
+getImagesAt :: Phase -> [Int] -> IO [Image]
+getImagesAt phase indices = concat <$> mapM readContents offsetAndIndices
+  where
+    dir = chunkedImagesDir phase
+    offsetAndIndices = IntMap.toList $ chunkedIndices chunkSize indices
+    readContents (offset, indices) = do
+      let file = dir </> show offset
+      exists <- doesFileExist file
+      when (not exists) $ (chunkifyImages phase) >> return ()
+      images <- Binary.decodeFile file
+      return $ fmap (images !!) $ sort indices
 
-displayImage :: [[Double]] -> IO ()
+getImagesMeta :: Phase -> IO (Maybe ImagesMeta)
+getImagesMeta = readMeta . chunkedImagesDir
+
+displayImage :: Image -> IO ()
 displayImage image = mapM_ putStrLn (map (map toGrayscale) image)
   where
     grayscale = " .:-=+*#%@"
     index x = (10 * ceiling x) `quot` 256
     toGrayscale x = grayscale !! (index x)
 
-type Sample = (Label NumberLabel, Image MatrixImage)
+type Sample = (Label, Image)
 
-getSamples :: forall phase. ( HasChunks phase NumberLabel
-                            , HasLabelFileLocate phase
-                            , HasChunks phase MatrixImage
-                            , HasImageFileLocate phase
-                            ) => Int -> IO [Sample]
-getSamples n = do
-  Just meta <- getLabelsMeta @phase @NumberLabel
+getSamples :: Phase -> Int -> IO [Sample]
+getSamples phase n = do
+  Just meta <- getLabelsMeta phase
   let Just count = Map.lookup "count" meta
   gen <- newStdGen
   let indices = List.sort $ take n $ List.nub $ randomRs (0, count - 1) gen
-  zip <$> (getLabelsAt @phase @NumberLabel indices) <*> (getImagesAt @phase @MatrixImage indices)
+  zip <$> (getLabelsAt phase indices) <*> (getImagesAt phase indices)
 
 displaySample :: Sample -> IO ()
 displaySample (num, image) = do
@@ -297,5 +241,5 @@ displaySample (num, image) = do
 
 main :: IO ()
 main = do
-  samples <- getSamples @Test 5
+  samples <- getSamples Test 5
   mapM_ displaySample samples
