@@ -26,7 +26,7 @@ module MNIST (
   ) where
 
 import Codec.Compression.GZip (decompress)
-import Control.Monad (when, guard)
+import Control.Monad (when, guard, void)
 import Data.Bifunctor
 import Data.Attoparsec.ByteString (Parser)
 import qualified Data.Attoparsec.ByteString as P
@@ -176,7 +176,7 @@ getLabelsAt phase indices = concat <$> mapM readContents offsetAndIndices
     readContents (offset, indices) = do
       let file = dir </> show offset
       exists <- doesFileExist file
-      when (not exists) $ (chunkifyLabels phase) >> return ()
+      when (not exists) $ void $ chunkifyLabels phase
       labels <- Binary.decodeFile file
       return $ fmap (labels !!) $ sort indices
 
@@ -209,7 +209,7 @@ getImagesAt phase indices = concat <$> mapM readContents offsetAndIndices
     readContents (offset, indices) = do
       let file = dir </> show offset
       exists <- doesFileExist file
-      when (not exists) $ (chunkifyImages phase) >> return ()
+      when (not exists) $ void $ chunkifyImages phase
       images <- Binary.decodeFile file
       return $ fmap (images !!) $ sort indices
 
