@@ -40,3 +40,13 @@ meanSquaredError t y = (/2) $ sum $ fmap (^2) $ zipWith (-) t y
 crossEntropyError :: [Double] -> [Double] -> Double
 crossEntropyError t y = negate $ sum $ zipWith (*) t $ fmap (log . (+delta)) y
   where delta = 1e-7 :: Double
+
+-- |
+-- >>> function1 x = 0.01 * x * x + 0.1 * x
+-- >>> numericalDiff function1 5
+-- 0.1999999999990898
+-- >>> numericalDiff function1 10
+-- 0.2999999999997449
+numericalDiff :: (Double -> Double) -> Double -> Double
+numericalDiff f x = (f (x + h) - f (x - h)) / (2 * h)
+  where h = 1e-4 :: Double
