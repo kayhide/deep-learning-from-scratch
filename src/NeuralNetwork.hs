@@ -47,6 +47,11 @@ crossEntropyError t y = negate $ sum $ zipWith (*) t $ fmap (log . (+delta)) y
 -- 0.1999999999990898
 -- >>> numericalDiff function1 10
 -- 0.2999999999997449
+-- >>> function2 x y = x * x + y * y
+-- >>> numericalDiff (flip function2 4) 3
+-- 6.00000000000378
+-- >>> numericalDiff (function2 3) 4
+-- 7.999999999999119
 numericalDiff :: (Double -> Double) -> Double -> Double
 numericalDiff f x = (f (x + h) - f (x - h)) / (2 * h)
   where h = 1e-4 :: Double

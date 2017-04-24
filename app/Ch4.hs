@@ -33,3 +33,15 @@ displayTangents = plotPathsStyle attrs paths
                         ]
           let style = PlotStyle Lines $ CustomStyle [(LineTitle name)]
           return $ (style, zip xs (fn <$> xs))
+
+-- ch4_3_3
+function2 :: Double -> Double -> Double
+function2 x0 x1 = x0 * x0 + x1 * x1
+
+displayFunction2 :: IO ()
+displayFunction2 = plotMesh3d [] [] $ do
+  x <- xs
+  return $ do
+    y <- xs
+    return (x, y, function2 x y)
+      where xs = linearScale 100 (-3, 3) :: [Double]
