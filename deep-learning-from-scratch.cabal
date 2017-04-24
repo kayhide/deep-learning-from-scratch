@@ -38,6 +38,7 @@ executable deep-learning-from-scratch
   hs-source-dirs:      app
   main-is:             Main.hs
   other-modules:       Ch3
+                     , Ch4
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , deep-learning-from-scratch
