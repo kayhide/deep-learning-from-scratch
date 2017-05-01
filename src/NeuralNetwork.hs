@@ -1,4 +1,7 @@
+{-# LANGUAGE FlexibleContexts #-}
 module NeuralNetwork where
+
+import Control.Lens
 
 stepFunction :: Double -> Double
 stepFunction x | x > 0 = 1.0
@@ -55,3 +58,24 @@ crossEntropyError t y = negate $ sum $ zipWith (*) t $ fmap (log . (+delta)) y
 numericalDiff :: (Double -> Double) -> Double -> Double
 numericalDiff f x = (f (x + h) - f (x - h)) / (2 * h)
   where h = 1e-4 :: Double
+
+-- |
+-- >>> function2 = sum . map (^ 2)
+-- >>> numericalGradient function2 [3.0, 4.0]
+-- [6.00000000000378,7.999999999999119]
+-- >>> numericalGradient function2 [0.0, 2.0]
+-- [0.0,4.000000000004]
+-- >>> numericalGradient function2 [3.0, 0.0]
+-- [6.000000000012662,0.0]
+numericalGradient :: ([Double] -> Double) -> [Double] -> [Double]
+numericalGradient f xs = zipWith (\l r -> (r - l) / (2 * h)) dxsl dxsr
+  where h = 1e-4 :: Double
+        dxsl = map f $ replicateMap (subtract h) xs
+        dxsr = map f $ replicateMap (+ h) xs
+
+-- |
+-- >>> replicateMap (+ 100) [1.0, 2.0, 3.0]
+-- [[101.0,2.0,3.0],[1.0,102.0,3.0],[1.0,2.0,103.0]]
+replicateMap :: (Double -> Double) -> [Double] -> [[Double]]
+replicateMap f xs = map (modifyAt f) $ zip [0..] (replicate (length xs) xs)
+  where modifyAt f (i, xs) = xs & ix i %~ f

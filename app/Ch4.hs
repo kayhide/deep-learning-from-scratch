@@ -2,6 +2,7 @@ module Ch4 where
 
 import Control.Monad
 import Graphics.Gnuplot.Simple
+import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
 
 import Perceptron
 import NeuralNetwork
@@ -35,13 +36,23 @@ displayTangents = plotPathsStyle attrs paths
           return $ (style, zip xs (fn <$> xs))
 
 -- ch4_3_3
-function2 :: Double -> Double -> Double
-function2 x0 x1 = x0 * x0 + x1 * x1
+function2 :: [Double] -> Double
+function2 = sum . map (^ 2)
 
 displayFunction2 :: IO ()
-displayFunction2 = plotMesh3d [] [] $ do
-  x <- xs
-  return $ do
-    y <- xs
-    return (x, y, function2 x y)
-      where xs = linearScale 100 (-3, 3) :: [Double]
+displayFunction2 = plotFunc3d [] [] xs ys function2'
+  where xs = linearScale 100 (-3, 3) :: [Double]
+        ys = linearScale 100 (-3, 3) :: [Double]
+        function2' x y = function2 [x, y]
+
+displayGradient :: IO ()
+displayGradient = plotListStyle [] style vs
+  where
+    style = defaultStyle { plotType = Vectors }
+    xs = [(-2.0), (-1.75) .. 2.0] :: [Double]
+    ys = [(-2.0), (-1.75) .. 2.0] :: [Double]
+    vs = do
+      x <- xs
+      y <- ys
+      let [dx, dy] = numericalGradient function2 [x, y]
+      return ((x, y), (-dx / 20,  - dy / 20))
