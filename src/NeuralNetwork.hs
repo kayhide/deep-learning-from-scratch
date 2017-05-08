@@ -80,3 +80,18 @@ numericalGradient f v = vector $ zipWith (\l r -> (r - l) / (2 * h)) v1 v2
 replicateMap :: (Double -> Double) -> Vector R -> [Vector R]
 replicateMap f v = map (modifyAt f) $ zip [0..] (replicate (size v) v)
   where modifyAt f (i, v) = v & ix i %~ f
+
+-- |
+-- >>> function2 v = dot v v
+-- >>> gradientDescent function2 (vector [-3.0, 4.0]) 0.1 100
+-- [-6.111107928998789e-10,8.148143905314271e-10]
+gradientDescent :: ((Vector R) -> Double) -> Vector R -> Double -> Int -> Vector R
+gradientDescent f v lr steps = gradientDescents f lr v !! steps
+
+-- |
+-- >>> function2 v = dot v v
+-- >>> take 3 $ gradientDescents function2 0.1 (vector [-3.0, 4.0])
+-- [[-3.0,4.0],[-2.399999999999622,3.200000000000088],[-1.9199999999982538,2.5599999999976717]]
+gradientDescents :: ((Vector R) -> Double) -> Double -> Vector R -> [Vector R]
+gradientDescents f lr v = iterate desc v
+  where desc v = v - cmap (* lr) (numericalGradient f v)
