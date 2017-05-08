@@ -1,13 +1,16 @@
 module Ch4 where
 
 import Control.Monad
+import Numeric.LinearAlgebra
 import Graphics.Gnuplot.Simple
-import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
 
 import Perceptron
 import NeuralNetwork
 import qualified MNIST
 
+
+main :: IO ()
+main = return ()
 
 -- ch4_3_2
 function1 :: Double -> Double
@@ -36,14 +39,14 @@ displayTangents = plotPathsStyle attrs paths
           return $ (style, zip xs (fn <$> xs))
 
 -- ch4_3_3
-function2 :: [Double] -> Double
-function2 = sum . map (^ 2)
+function2 :: Vector R -> Double
+function2 v = dot v v
 
 displayFunction2 :: IO ()
 displayFunction2 = plotFunc3d [] [] xs ys function2'
   where xs = linearScale 100 (-3, 3) :: [Double]
         ys = linearScale 100 (-3, 3) :: [Double]
-        function2' x y = function2 [x, y]
+        function2' x y = function2 $ vector [x, y]
 
 displayGradient :: IO ()
 displayGradient = plotListStyle [] style vs
@@ -54,5 +57,6 @@ displayGradient = plotListStyle [] style vs
     vs = do
       x <- xs
       y <- ys
-      let [dx, dy] = numericalGradient function2 [x, y]
+      let [dx, dy] = toList $ numericalGradient function2 $ vector [x, y]
       return ((x, y), (-dx / 20,  - dy / 20))
+
