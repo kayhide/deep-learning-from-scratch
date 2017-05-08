@@ -18,7 +18,7 @@ function1 x = 0.01 * x * x + 0.1 * x
 
 displayFunction1 :: IO ()
 displayFunction1 = plotPath attrs $ zip xs ys
-  where attrs = [(Title "function 1"), (YRange (0, 6))]
+  where attrs = [(Title "Function 1"), (YRange (0, 6))]
         xs = linearScale 100 (0, 20) :: [Double]
         ys = function1 <$> xs
 
@@ -28,7 +28,7 @@ tangent f x0 x = a * (x - x0) + f x0
 
 displayTangents :: IO ()
 displayTangents = plotPathsStyle attrs paths
-  where attrs = [(YRange (-1, 6))]
+  where attrs = [(Title "Tangents of Function 1"), (YRange (-1, 6))]
         xs = linearScale 100 (0, 20) :: [Double]
         paths = do
           (fn, name) <- [ (function1, "0.01 * x^2 + 0.1 * x")
@@ -43,14 +43,16 @@ function2 :: Vector R -> Double
 function2 v = dot v v
 
 displayFunction2 :: IO ()
-displayFunction2 = plotFunc3d [] [] xs ys function2'
-  where xs = linearScale 100 (-3, 3) :: [Double]
+displayFunction2 = plotFunc3d attrs [] xs ys function2'
+  where attrs = [(Title "Function 2")]
+        xs = linearScale 100 (-3, 3) :: [Double]
         ys = linearScale 100 (-3, 3) :: [Double]
         function2' x y = function2 $ vector [x, y]
 
-displayGradient :: IO ()
-displayGradient = plotListStyle [] style vs
+displayGradients :: IO ()
+displayGradients = plotListStyle attrs style vs
   where
+    attrs = [(Title "Gradients of Function 2")]
     style = defaultStyle { plotType = Vectors }
     xs = [(-2.0), (-1.75) .. 2.0] :: [Double]
     ys = [(-2.0), (-1.75) .. 2.0] :: [Double]
@@ -58,5 +60,15 @@ displayGradient = plotListStyle [] style vs
       x <- xs
       y <- ys
       let [dx, dy] = toList $ numericalGradient function2 $ vector [x, y]
-      return ((x, y), (-dx / 20,  - dy / 20))
+      return ((x, y), (- dx / 20, - dy / 20))
 
+displayDescents :: IO ()
+displayDescents = plotPathStyle attrs style vs
+  where
+    attrs = [(Title "Gradient descents of Function 2"), (XRange (-4, 4)), (YRange (-4, 4))]
+    style = defaultStyle { plotType = Points }
+    v0 = vector [-3.0, 4.0]
+    vs = do
+      v <- take 100 $ gradientDescents function2 0.1 v0
+      let [x, y] = toList v
+      return (x, y)
