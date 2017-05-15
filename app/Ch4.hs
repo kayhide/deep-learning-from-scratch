@@ -1,5 +1,7 @@
+{-# LANGUAGE OverloadedLists #-}
 module Ch4 where
 
+import Data.List
 import Control.Monad
 import Numeric.LinearAlgebra
 import Graphics.Gnuplot.Simple
@@ -7,6 +9,8 @@ import Graphics.Gnuplot.Simple
 import Perceptron
 import NeuralNetwork
 import qualified MNIST
+import SimpleNet (SimpleNet (..))
+import qualified SimpleNet
 
 
 main :: IO ()
@@ -78,3 +82,40 @@ displayDescents = plotPathStyle attrs style vs
       v <- take 100 $ gradientDescents function2 0.1 v0
       let [x, y] = toList v
       return (x, y)
+
+-- ch4_4_2
+net :: SimpleNet
+net = SimpleNet $ (2 >< 3) [ 0.47355232, 0.99773930, 0.84668094
+                           , 0.85557411, 0.03563661, 0.69422093]
+
+input :: Vector R
+input = [0.6, 0.9]
+
+functionNet :: Vector R -> Double
+functionNet v = SimpleNet.loss net' input t
+  where
+    net' = SimpleNet $ reshape 3 v
+    t = [0, 0, 1] :: Vector R
+
+dw :: SimpleNet -> Matrix R
+dw (SimpleNet w) = reshape cols' $ numericalGradient functionNet $ flatten w
+  where cols' = cols w
+
+netDescents :: SimpleNet -> [SimpleNet]
+netDescents net = iterate descend net
+  where
+    lr = 0.1
+    descend net@(SimpleNet w) = SimpleNet $ w - scale lr (dw net)
+
+displayLearnings :: IO ()
+displayLearnings = plotPathsStyle attrs paths
+  where
+    attrs = [(Title "Learnings of simple net"), (YRange (0, 1))]
+    xs = [0 .. 50] :: [Double]
+    n = length xs
+    nets = netDescents net
+    outputs = map (toList . softmax . (flip SimpleNet.predict input)) nets
+    paths = do
+      (i, path) <- zip [0..] $ transpose $ take n outputs
+      let style = PlotStyle Lines $ CustomStyle [(LineTitle (show i))]
+      return (style, zip xs path)
