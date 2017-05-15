@@ -62,7 +62,7 @@ readNetwork = do
   b3 <- readVector' "b3"
   return [ (w1, b1, map sigmoidFunction)
          , (w2, b2, map sigmoidFunction)
-         , (w3, b3, softmax)
+         , (w3, b3, (toList . softmax . vector))
          ]
   where readMatrix' f = readMatrix $ "data/mnist/" ++ f ++ ".yml"
         readVector' f = readVector $ "data/mnist/" ++ f ++ ".yml"

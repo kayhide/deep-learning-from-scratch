@@ -15,34 +15,37 @@ reluFunction :: Double -> Double
 reluFunction = max 0
 
 -- |
+-- >>> :set -XOverloadedLists
 -- >>> softmax [1010, 1000, 990]
 -- [0.999954600070331,4.539786860886666e-5,2.061060046209062e-9]
 -- >>> softmax [0.3, 2.9, 4.0]
 -- [1.821127329554753e-2,0.24519181293507392,0.7365969137693786]
--- >>> sum $ softmax [0.3, 2.9, 4.0]
+-- >>> sumElements $ softmax [0.3, 2.9, 4.0]
 -- 1.0
-softmax :: [Double] -> [Double]
-softmax xs = map (/denom) ys
-  where ys = map calc xs
+softmax :: Vector R -> Vector R
+softmax xs = cmap (/denom) ys
+  where ys = cmap calc xs
         calc x = exp (x - c)
-        c = maximum xs
-        denom = sum ys
+        c = maxElement xs
+        denom = sumElements ys
 
 -- |
+-- >>> :set -XOverloadedLists
 -- >>> meanSquaredError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.6, 0, 0.05, 0.1, 0, 0.1, 0, 0]
 -- 9.750000000000003e-2
 -- >>> meanSquaredError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.1, 0, 0.05, 0.1, 0, 0.6, 0.5, 0]
 -- 0.7224999999999999
-meanSquaredError :: [Double] -> [Double] -> Double
-meanSquaredError t y = (/2) $ sum $ fmap (^2) $ zipWith (-) t y
+meanSquaredError :: Vector R -> Vector R -> Double
+meanSquaredError t y = (/2) $ sumElements $ cmap (^2) $ t - y
 
 -- |
+-- >>> :set -XOverloadedLists
 -- >>> crossEntropyError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.6, 0, 0.05, 0.1, 0, 0.1, 0, 0]
 -- 0.510825457099338
 -- >>> crossEntropyError [0, 0, 1, 0, 0, 0, 0, 0, 0, 0] [0.1, 0.05, 0.1, 0, 0.05, 0.1, 0, 0.6, 0.5, 0]
 -- 2.302584092994546
-crossEntropyError :: [Double] -> [Double] -> Double
-crossEntropyError t y = negate $ sum $ zipWith (*) t $ fmap (log . (+delta)) y
+crossEntropyError :: Vector R -> Vector R -> Double
+crossEntropyError t y = negate $ dot t $ cmap (log . (+delta)) y
   where delta = 1e-7 :: Double
 
 -- |
@@ -69,10 +72,10 @@ numericalDiff f x = (f (x + h) - f (x - h)) / (2 * h)
 -- >>> numericalGradient function2 $ vector [3.0, 0.0]
 -- [6.000000000012662,0.0]
 numericalGradient :: ((Vector R) -> Double) -> Vector R -> Vector R
-numericalGradient f v = vector $ zipWith (\l r -> (r - l) / (2 * h)) v1 v2
+numericalGradient f v = cmap (/ (2 * h)) (v2 - v1)
   where h = 1e-4 :: Double
-        v1 = f <$> replicateMap (subtract h) v
-        v2 = f <$> replicateMap (+ h) v
+        v1 = fromList $ f <$> replicateMap (subtract h) v
+        v2 = fromList $ f <$> replicateMap (+ h) v
 
 -- |
 -- >>> replicateMap (+ 100) $ vector [1.0, 2.0, 3.0]
