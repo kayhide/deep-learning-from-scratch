@@ -84,22 +84,26 @@ displayDescents = plotPathStyle attrs style vs
       return (x, y)
 
 -- ch4_4_2
+
+functionLoss :: Vector R -> Vector R -> Matrix R -> Double
+functionLoss input label w = SimpleNet.loss net' input label
+  where net' = SimpleNet w
+
 net :: SimpleNet
 net = SimpleNet $ (2 >< 3) [ 0.47355232, 0.99773930, 0.84668094
                            , 0.85557411, 0.03563661, 0.69422093]
 
 input :: Vector R
-input = [0.6, 0.9]
+input = [0.6, 0.9]              -- input
 
-functionNet :: Vector R -> Double
-functionNet v = SimpleNet.loss net' input t
-  where
-    net' = SimpleNet $ reshape 3 v
-    t = [0, 0, 1] :: Vector R
+answer :: Vector R
+answer = [0, 0, 1]              -- correct answer
+
+functionNet :: Matrix R -> Double
+functionNet = functionLoss input answer
 
 dw :: SimpleNet -> Matrix R
-dw (SimpleNet w) = reshape cols' $ numericalGradient functionNet $ flatten w
-  where cols' = cols w
+dw (SimpleNet w) = numericalGradient functionNet w
 
 netDescents :: SimpleNet -> [SimpleNet]
 netDescents net = iterate descend net

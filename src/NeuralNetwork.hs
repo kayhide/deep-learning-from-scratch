@@ -1,4 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+
 module NeuralNetwork where
 
 import Control.Lens
@@ -71,18 +77,19 @@ numericalDiff f x = (f (x + h) - f (x - h)) / (2 * h)
 -- [0.0,4.000000000004]
 -- >>> numericalGradient function2 $ vector [3.0, 0.0]
 -- [6.000000000012662,0.0]
-numericalGradient :: ((Vector R) -> Double) -> Vector R -> Vector R
-numericalGradient f v = cmap (/ (2 * h)) (v2 - v1)
-  where h = 1e-4 :: Double
-        v1 = fromList $ f <$> replicateMap (subtract h) v
-        v2 = fromList $ f <$> replicateMap (+ h) v
-
--- |
--- >>> replicateMap (+ 100) $ vector [1.0, 2.0, 3.0]
--- [[101.0,2.0,3.0],[1.0,102.0,3.0],[1.0,2.0,103.0]]
-replicateMap :: (Double -> Double) -> Vector R -> [Vector R]
-replicateMap f v = map (modifyAt f) $ zip [0..] (replicate (size v) v)
-  where modifyAt f (i, v) = v & ix i %~ f
+numericalGradient
+  :: (Gradible c)
+  => ((c R) -> R) -> c R -> c R
+numericalGradient f v = assoc (size v) 0 xs
+  where
+    h = 1e-4 :: R
+    size' = size v
+    xs = do
+      idx <- indicesOf v
+      let v1 = v - assoc size' 0 [(idx, h)]
+          v2 = v + assoc size' 0 [(idx, h)]
+          x' = f v2 - f v1
+      return (idx, x' / (2 * h))
 
 -- |
 -- >>> function2 v = dot v v
@@ -98,3 +105,14 @@ gradientDescent f v lr steps = gradientDescents f lr v !! steps
 gradientDescents :: ((Vector R) -> Double) -> Double -> Vector R -> [Vector R]
 gradientDescents f lr v = iterate desc v
   where desc v = v - cmap (* lr) (numericalGradient f v)
+
+
+
+class (Container c R, Num (c R)) => Gradible c where
+  indicesOf :: c R -> [IndexOf c]
+
+instance Gradible Vector where
+  indicesOf v = take (size v) [0..]
+
+instance Gradible Matrix where
+  indicesOf w = (,) <$> (take (rows w) [0..]) <*> (take (cols w) [0..])
